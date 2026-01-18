@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF Speed Reader</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #111;
+      color: #eee;
+    }
+
+    .topbar {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    label {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    input[type="number"] {
+      width: 90px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #101010;
+      color: #eee;
+    }
+
+    input[type="file"] {
+      color: #eee;
+    }
+
+    input[type="range"] {
+      width: 220px;
+    }
+
+    button {
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid #333;
+      background: #151515;
+      color: #eee;
+      cursor: pointer;
+    }
+    button:hover { background: #1f1f1f; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .counter {
+      font-variant-numeric: tabular-nums;
+      opacity: 0.9;
+    }
+
+    .stage {
+      height: calc(100% - 150px);
+      min-height: 320px;
+      display: grid;
+      place-items: center;
+      background: #000;
+    }
+
+    /* Word display */
+    .wordbox {
+      position: relative;
+      width: min(900px, 95vw);
+      height: min(260px, 35vh);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .word {
+      position: relative;
+      font-size: clamp(36px, 7vw, 90px);
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: #fff;
+      white-space: nowrap;
+      transform: translateX(var(--shift, 0px));
+    }
+
+    .word .pivot {
+      color: #ff2a2a;
+    }
+
+    /* Crosshair at exact center (optional visual aid) */
+    .crosshair {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .crosshair::before,
+    .crosshair::after {
+      content: "";
+      position: absolute;
+      background: rgba(255,255,255,0.08);
+    }
+    .crosshair::before { /* vertical */
+      width: 1px;
+      top: 0; bottom: 0;
+      left: 50%;
+      transform: translateX(-0.5px);
+    }
+    .crosshair::after { /* horizontal */
+      height: 1px;
+      left: 0; right: 0;
+      top: 50%;
+      transform: translateY(-0.5px);
+    }
+
+    .status {
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #bbb;
+      border-top: 1px solid #222;
+      background: #0f0f0f;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #333;
+      background: #141414;
+      color: #ddd;
+      margin-left: 8px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="row">
+      <label>
+        PDF:
+        <input id="pdf" type="file" accept="application/pdf" />
+      </label>
+
+      <button id="uploadBtn">Upload & Extract</button>
+      <span class="pill" id="loadPill">No document loaded</span>
+    </div>
+
+    <div class="row">
+      <label>
+        WPM:
+        <input id="wpm" type="number" min="50" max="2000" step="10" value="300" />
+      </label>
+
+      <label>
+        Period pause (ms):
+        <input id="periodPause" type="range" min="1" max="1000" value="300" />
+        <span id="periodVal">300</span>
+      </label>
+
+      <label>
+        Comma/other pause (ms):
+        <input id="commaPause" type="range" min="1" max="1000" value="150" />
+        <span id="commaVal">150</span>
+      </label>
+
+      <span class="counter" id="counter">Word 0/0</span>
+    </div>
+
+    <div class="row">
+      <button id="playBtn" disabled>Play</button>
+      <button id="pauseBtn" disabled>Pause</button>
+      <button id="restartBtn" disabled>Restart</button>
+      <button id="rewindBtn" disabled>&laquo; Rewind</button>
+      <button id="forwardBtn" disabled>Forward &raquo;</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="wordbox">
+      <div class="crosshair"></div>
+      <div class="word" id="word"></div>
+    </div>
+  </div>
+
+  <div class="status" id="status">
+    Upload a PDF to begin.
+  </div>
+
+<script>
+  // --- State ---
+  let tokens = [];
+  let index = 0;
+  let playing = false;
+  let timer = null;
+
+  const els = {
+    pdf: document.getElementById("pdf"),
+    uploadBtn: document.getElementById("uploadBtn"),
+    loadPill: document.getElementById("loadPill"),
+    wpm: document.getElementById("wpm"),
+    periodPause: document.getElementById("periodPause"),
+    commaPause: document.getElementById("commaPause"),
+    periodVal: document.getElementById("periodVal"),
+    commaVal: document.getElementById("commaVal"),
+    playBtn: document.getElementById("playBtn"),
+    pauseBtn: document.getElementById("pauseBtn"),
+    restartBtn: document.getElementById("restartBtn"),
+    rewindBtn: document.getElementById("rewindBtn"),
+    forwardBtn: document.getElementById("forwardBtn"),
+    counter: document.getElementById("counter"),
+    word: document.getElementById("word"),
+    status: document.getElementById("status"),
+  };
+
+  function setStatus(msg) {
+    els.status.textContent = msg;
+  }
+
+  function setControlsEnabled(enabled) {
+    els.playBtn.disabled = !enabled;
+    els.pauseBtn.disabled = !enabled;
+    els.restartBtn.disabled = !enabled;
+    els.rewindBtn.disabled = !enabled;
+    els.forwardBtn.disabled = !enabled;
+  }
+
+  function updateCounter() {
+    els.counter.textContent = `Word ${tokens.length ? (index + 1) : 0}/${tokens.length}`;
+  }
+
+  // ORP-style pivot index: ~1/3 into the word, clamped.
+  function pivotIndexForWord(word) {
+    const n = word.length;
+    if (n <= 1) return 0;
+    if (n <= 5) return 1;
+    if (n <= 9) return 2;
+    if (n <= 13) return 3;
+    return 4;
+  }
+
+  function isPunctuationToken(t) {
+    return /^[“”"‘’'\(\)\[\]\{\}.,;:!?-–—]$/.test(t);
+  }
+
+  function pauseForToken(t) {
+    // brief pause every period
+    if (t === ".") return parseInt(els.periodPause.value, 10);
+    // commas and other "pausing" punctuation
+    if ([",",";":].includes(t)) return parseInt(els.commaPause.value, 10); // note: ":" is handled below, keep list minimal
+    if ([",",";"].includes(t) || t === ":" || t === "!" || t === "?" || t === "—" || t === "–" || t === "-" ) {
+      return parseInt(els.commaPause.value, 10);
+    }
+    return 0;
+  }
+
+  function msPerWord() {
+    const wpm = Math.max(50, Math.min(2000, parseInt(els.wpm.value || "300", 10)));
+    return 60000 / wpm;
+  }
+
+  // Render word with pivot highlighted and pivot aligned to screen center.
+  function renderToken(t) {
+    if (!t) {
+      els.word.textContent = "";
+      els.word.style.setProperty("--shift", "0px");
+      return;
+    }
+
+    // If token is punctuation, show it but don't try to pivot-color inside it.
+    if (isPunctuationToken(t)) {
+      els.word.innerHTML = `<span>${escapeHtml(t)}</span>`;
+      els.word.style.setProperty("--shift", "0px");
+      return;
+    }
+
+    const p = pivotIndexForWord(t);
+    const left = t.slice(0, p);
+    const pivot = t[p] || "";
+    const right = t.slice(p + 1);
+
+    els.word.innerHTML = `<span>${escapeHtml(left)}</span><span class="pivot">${escapeHtml(pivot)}</span><span>${escapeHtml(right)}</span>`;
+
+    // Align pivot span's center to the wordbox center by shifting the whole word.
+    requestAnimationFrame(() => {
+      const wordEl = els.word;
+      const pivotEl = wordEl.querySelector(".pivot");
+      if (!pivotEl) {
+        wordEl.style.setProperty("--shift", "0px");
+        return;
+      }
+
+      const wordRect = wordEl.getBoundingClientRect();
+      const pivotRect = pivotEl.getBoundingClientRect();
+      const pivotCenterX = pivotRect.left + pivotRect.width / 2;
+      const wordboxCenterX = window.innerWidth / 2; // stage is centered full width; this is fine.
+
+      const delta = wordboxCenterX - pivotCenterX;
+      wordEl.style.setProperty("--shift", `${delta}px`);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function stopTimer() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  }
+
+  function stepOnce() {
+    if (!tokens.length) return;
+
+    // Show current token
+    const t = tokens[index];
+    renderToken(t);
+    updateCounter();
+
+    // Decide delay (base word time + optional punctuation pause)
+    let delay = msPerWord();
+
+    // If current token is punctuation, we still advance, but use pause rule
+    const extra = pauseForToken(t);
+    delay += extra;
+
+    // Advance index
+    index = Math.min(tokens.length - 1, index + 1);
+
+    // If we reached end, auto-pause
+    if (index >= tokens.length - 1) {
+      // We'll display last token, then stop after this delay
+      timer = setTimeout(() => {
+        playing = false;
+        stopTimer();
+        setStatus("Reached end. Press Restart or Rewind.");
+      }, delay);
+      return;
+    }
+
+    // Schedule next
+    timer = setTimeout(() => {
+      if (!playing) return;
+      stepOnce();
+    }, delay);
+  }
+
+  function play() {
+    if (!tokens.length) return;
+    if (playing) return;
+    playing = true;
+    setStatus("Playing...");
+    stopTimer();
+    stepOnce();
+  }
+
+  function pause() {
+    playing = false;
+    stopTimer();
+    setStatus("Paused.");
+  }
+
+  function restart() {
+    pause();
+    index = 0;
+    renderToken(tokens[index] || "");
+    updateCounter();
+    setStatus("Restarted.");
+  }
+
+  function rewind() {
+    pause();
+    index = Math.max(0, index - 10);
+    renderToken(tokens[index] || "");
+    updateCounter();
+    setStatus("Rewound.");
+  }
+
+  function forward() {
+    pause();
+    index = Math.min(tokens.length - 1, index + 10);
+    renderToken(tokens[index] || "");
+    updateCounter();
+    setStatus("Forwarded.");
+  }
+
+  // --- UI wiring ---
+  els.periodPause.addEventListener("input", () => els.periodVal.textContent = els.periodPause.value);
+  els.commaPause.addEventListener("input", () => els.commaVal.textContent = els.commaPause.value);
+
+  els.playBtn.addEventListener("click", play);
+  els.pauseBtn.addEventListener("click", pause);
+  els.restartBtn.addEventListener("click", restart);
+  els.rewindBtn.addEventListener("click", rewind);
+  els.forwardBtn.addEventListener("click", forward);
+
+  els.uploadBtn.addEventListener("click", async () => {
+    const file = els.pdf.files && els.pdf.files[0];
+    if (!file) {
+      setStatus("Choose a PDF first.");
+      return;
+    }
+
+    pause();
+    setControlsEnabled(false);
+    setStatus("Uploading & extracting text...");
+
+    const form = new FormData();
+    form.append("pdf", file);
+
+    try {
+      const res = await fetch("/upload", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Upload failed");
+      }
+
+      tokens = data.tokens || [];
+      index = 0;
+
+      els.loadPill.textContent = `Loaded: ${tokens.length} tokens`;
+      setStatus(tokens.length ? "Loaded. Press Play." : "Loaded, but no text tokens found (possibly scanned PDF).");
+      setControlsEnabled(tokens.length > 0);
+      renderToken(tokens[0] || "");
+      updateCounter();
+    } catch (e) {
+      setStatus(`Error: ${e.message}`);
+      els.loadPill.textContent = "No document loaded";
+      tokens = [];
+      index = 0;
+      setControlsEnabled(false);
+      renderToken("");
+      updateCounter();
+    }
+  });
+
+  // Init displayed slider values
+  els.periodVal.textContent = els.periodPause.value;
+  els.commaVal.textContent = els.commaPause.value;
+  updateCounter();
+</script>
+</body>
+</html>
