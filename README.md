@@ -55,9 +55,9 @@ Frontend (Browser Playback Engine)
 
 WHY THIS PROJECT MATTERS
 ------------------------
-- ✓ Practical: a real reading tool you can tune to your brain
-- ✓ Technical: clean client/server split (extract once, play smoothly)
-- ✓ Design-focused: UI decisions are based on attention + perception, not aesthetics alone
+✓ Practical: a real reading tool you can tune to your brain  
+✓ Technical: clean client/server split (extract once, play smoothly)  
+✓ Design-focused: UI decisions are based on attention + perception, not aesthetics alone  
 
 
 QUICK START
