@@ -28,7 +28,7 @@ PSYCHOLOGY / HUMAN FACTORS
    Adding a tiny pause helps the brain chunk phrases into readable units instead of a nonstop stream.
 
 
-CODING / SYSTEM DESIGN (HOW IT WORKS)
+CODING / SYSTEM DESIGN
 -------------------------------------
 
 Backend (Python Web Server)
@@ -68,7 +68,7 @@ QUICK START
 4) Tune punctuation pauses until it feels natural
 
 
-LIMITATIONS (HONEST NOTES)
+LIMITATIONS
 --------------------------
 - Scanned PDFs may contain no selectable text (needs OCR)
 - Complex layouts (columns/tables) may extract out of order
