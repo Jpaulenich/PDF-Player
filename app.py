@@ -55,6 +55,6 @@ def upload():
 
 if __name__ == "__main__":
     # Listen on 0.0.0.0 so it’s reachable on your LAN too (optional)
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(host="0.0.0.0", port=8070, debug=True)
 
 

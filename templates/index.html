@@ -255,15 +255,13 @@
   }
 
   function pauseForToken(t) {
-    // brief pause every period
-    if (t === ".") return parseInt(els.periodPause.value, 10);
-    // commas and other "pausing" punctuation
-    if ([",",";":].includes(t)) return parseInt(els.commaPause.value, 10); // note: ":" is handled below, keep list minimal
-    if ([",",";"].includes(t) || t === ":" || t === "!" || t === "?" || t === "—" || t === "–" || t === "-" ) {
-      return parseInt(els.commaPause.value, 10);
-    }
-    return 0;
-  }
+  if (t === ".") return parseInt(els.periodPause.value, 10);
+
+  const commaLike = new Set([",", ";", ":", "!", "?", "—", "–", "-"]);
+  if (commaLike.has(t)) return parseInt(els.commaPause.value, 10);
+
+  return 0;
+}
 
   function msPerWord() {
     const wpm = Math.max(50, Math.min(2000, parseInt(els.wpm.value || "300", 10)));
