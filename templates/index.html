@@ -278,10 +278,21 @@
 
     // If token is punctuation, show it but don't try to pivot-color inside it.
     if (isPunctuationToken(t)) {
-      els.word.innerHTML = `<span>${escapeHtml(t)}</span>`;
-      els.word.style.setProperty("--shift", "0px");
+      els.word.innerHTML = `<span class="pivot">${escapeHtml(t)}</span>`;
+      requestAnimationFrame(() => {
+        const wordEl = els.word;
+        const pivotEl = wordEl.querySelector(".pivot");
+        const boxEl = document.querySelector(".wordbox");
+        if (!pivotEl || !boxEl) return;
+
+        const pivotRect = pivotEl.getBoundingClientRect();
+        const boxRect = boxEl.getBoundingClientRect();
+        const delta = (boxRect.left + boxRect.width/2) - (pivotRect.left + pivotRect.width/2);
+        wordEl.style.setProperty("--shift", `${delta}px`);
+      });
       return;
     }
+
 
     const p = pivotIndexForWord(t);
     const left = t.slice(0, p);
@@ -294,10 +305,19 @@
     requestAnimationFrame(() => {
       const wordEl = els.word;
       const pivotEl = wordEl.querySelector(".pivot");
-      if (!pivotEl) {
-        wordEl.style.setProperty("--shift", "0px");
-        return;
-      }
+      const boxEl = document.querySelector(".wordbox");
+      if (!pivotEl || !boxEl) return;
+
+      const pivotRect = pivotEl.getBoundingClientRect();
+      const boxRect = boxEl.getBoundingClientRect();
+
+      const pivotCenterX = pivotRect.left + pivotRect.width / 2;
+      const boxCenterX = boxRect.left + boxRect.width / 2;
+
+      const delta = boxCenterX - pivotCenterX;
+      wordEl.style.setProperty("--shift", `${delta}px`);
+    });
+
 
       const wordRect = wordEl.getBoundingClientRect();
       const pivotRect = pivotEl.getBoundingClientRect();
