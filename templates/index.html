@@ -76,7 +76,6 @@
       background: #000;
     }
 
-    /* Word display */
     .wordbox {
       position: relative;
       width: min(900px, 95vw);
@@ -84,6 +83,7 @@
       display: grid;
       place-items: center;
       overflow: hidden;
+      background: #000;
     }
 
     .word {
@@ -94,13 +94,13 @@
       color: #fff;
       white-space: nowrap;
       transform: translateX(var(--shift, 0px));
+      will-change: transform;
     }
 
     .word .pivot {
       color: #ff2a2a;
     }
 
-    /* Crosshair at exact center (optional visual aid) */
     .crosshair {
       position: absolute;
       inset: 0;
@@ -112,13 +112,13 @@
       position: absolute;
       background: rgba(255,255,255,0.08);
     }
-    .crosshair::before { /* vertical */
+    .crosshair::before {
       width: 1px;
       top: 0; bottom: 0;
       left: 50%;
       transform: translateX(-0.5px);
     }
-    .crosshair::after { /* horizontal */
+    .crosshair::after {
       height: 1px;
       left: 0; right: 0;
       top: 50%;
@@ -188,7 +188,7 @@
   </div>
 
   <div class="stage">
-    <div class="wordbox">
+    <div class="wordbox" id="wordbox">
       <div class="crosshair"></div>
       <div class="word" id="word"></div>
     </div>
@@ -199,7 +199,7 @@
   </div>
 
 <script>
-  // --- State ---
+(() => {
   let tokens = [];
   let index = 0;
   let playing = false;
@@ -221,6 +221,7 @@
     forwardBtn: document.getElementById("forwardBtn"),
     counter: document.getElementById("counter"),
     word: document.getElementById("word"),
+    wordbox: document.getElementById("wordbox"),
     status: document.getElementById("status"),
   };
 
@@ -240,7 +241,15 @@
     els.counter.textContent = `Word ${tokens.length ? (index + 1) : 0}/${tokens.length}`;
   }
 
-  // ORP-style pivot index: ~1/3 into the word, clamped.
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
   function pivotIndexForWord(word) {
     const n = word.length;
     if (n <= 1) return 0;
@@ -251,24 +260,43 @@
   }
 
   function isPunctuationToken(t) {
-    return /^[“”"‘’'\(\)\[\]\{\}.,;:!?-–—]$/.test(t);
+    return /^[“”"‘’'()\[\]{}.,;:!?-–—]$/.test(t);
   }
 
   function pauseForToken(t) {
-  if (t === ".") return parseInt(els.periodPause.value, 10);
-
-  const commaLike = new Set([",", ";", ":", "!", "?", "—", "–", "-"]);
-  if (commaLike.has(t)) return parseInt(els.commaPause.value, 10);
-
-  return 0;
-}
+    if (t === ".") return parseInt(els.periodPause.value, 10);
+    const commaLike = new Set([",", ";", ":", "!", "?", "—", "–", "-"]);
+    if (commaLike.has(t)) return parseInt(els.commaPause.value, 10);
+    return 0;
+  }
 
   function msPerWord() {
     const wpm = Math.max(50, Math.min(2000, parseInt(els.wpm.value || "300", 10)));
     return 60000 / wpm;
   }
 
-  // Render word with pivot highlighted and pivot aligned to screen center.
+  // IMPORTANT: Reset shift to 0 before measuring, otherwise measurements can be polluted by the previous word's transform.
+  function alignPivotToWordboxCenter() {
+    const wordEl = els.word;
+    const pivotEl = wordEl.querySelector(".pivot");
+    const boxEl = els.wordbox;
+
+    if (!pivotEl || !boxEl) return;
+
+    // Reset any previous shift and force a layout pass
+    wordEl.style.setProperty("--shift", "0px");
+    void wordEl.offsetWidth;
+
+    const pivotRect = pivotEl.getBoundingClientRect();
+    const boxRect = boxEl.getBoundingClientRect();
+
+    const pivotCenterX = pivotRect.left + (pivotRect.width / 2);
+    const boxCenterX = boxRect.left + (boxRect.width / 2);
+
+    const delta = boxCenterX - pivotCenterX;
+    wordEl.style.setProperty("--shift", `${delta}px`);
+  }
+
   function renderToken(t) {
     if (!t) {
       els.word.textContent = "";
@@ -276,66 +304,23 @@
       return;
     }
 
-    // If token is punctuation, show it but don't try to pivot-color inside it.
     if (isPunctuationToken(t)) {
       els.word.innerHTML = `<span class="pivot">${escapeHtml(t)}</span>`;
-      requestAnimationFrame(() => {
-        const wordEl = els.word;
-        const pivotEl = wordEl.querySelector(".pivot");
-        const boxEl = document.querySelector(".wordbox");
-        if (!pivotEl || !boxEl) return;
-
-        const pivotRect = pivotEl.getBoundingClientRect();
-        const boxRect = boxEl.getBoundingClientRect();
-        const delta = (boxRect.left + boxRect.width/2) - (pivotRect.left + pivotRect.width/2);
-        wordEl.style.setProperty("--shift", `${delta}px`);
-      });
+      requestAnimationFrame(alignPivotToWordboxCenter);
       return;
     }
-
 
     const p = pivotIndexForWord(t);
     const left = t.slice(0, p);
     const pivot = t[p] || "";
     const right = t.slice(p + 1);
 
-    els.word.innerHTML = `<span>${escapeHtml(left)}</span><span class="pivot">${escapeHtml(pivot)}</span><span>${escapeHtml(right)}</span>`;
+    els.word.innerHTML =
+      `<span>${escapeHtml(left)}</span>` +
+      `<span class="pivot">${escapeHtml(pivot)}</span>` +
+      `<span>${escapeHtml(right)}</span>`;
 
-    // Align pivot span's center to the wordbox center by shifting the whole word.
-    requestAnimationFrame(() => {
-      const wordEl = els.word;
-      const pivotEl = wordEl.querySelector(".pivot");
-      const boxEl = document.querySelector(".wordbox");
-      if (!pivotEl || !boxEl) return;
-
-      const pivotRect = pivotEl.getBoundingClientRect();
-      const boxRect = boxEl.getBoundingClientRect();
-
-      const pivotCenterX = pivotRect.left + pivotRect.width / 2;
-      const boxCenterX = boxRect.left + boxRect.width / 2;
-
-      const delta = boxCenterX - pivotCenterX;
-      wordEl.style.setProperty("--shift", `${delta}px`);
-    });
-
-
-      const wordRect = wordEl.getBoundingClientRect();
-      const pivotRect = pivotEl.getBoundingClientRect();
-      const pivotCenterX = pivotRect.left + pivotRect.width / 2;
-      const wordboxCenterX = window.innerWidth / 2; // stage is centered full width; this is fine.
-
-      const delta = wordboxCenterX - pivotCenterX;
-      wordEl.style.setProperty("--shift", `${delta}px`);
-    });
-  }
-
-  function escapeHtml(s) {
-    return String(s)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+    requestAnimationFrame(alignPivotToWordboxCenter);
   }
 
   function stopTimer() {
@@ -348,33 +333,21 @@
   function stepOnce() {
     if (!tokens.length) return;
 
-    // Show current token
     const t = tokens[index];
     renderToken(t);
     updateCounter();
 
-    // Decide delay (base word time + optional punctuation pause)
-    let delay = msPerWord();
+    const delay = msPerWord() + pauseForToken(t);
 
-    // If current token is punctuation, we still advance, but use pause rule
-    const extra = pauseForToken(t);
-    delay += extra;
-
-    // Advance index
-    index = Math.min(tokens.length - 1, index + 1);
-
-    // If we reached end, auto-pause
-    if (index >= tokens.length - 1) {
-      // We'll display last token, then stop after this delay
-      timer = setTimeout(() => {
-        playing = false;
-        stopTimer();
-        setStatus("Reached end. Press Restart or Rewind.");
-      }, delay);
+    if (index < tokens.length - 1) {
+      index += 1;
+    } else {
+      playing = false;
+      stopTimer();
+      setStatus("Reached end. Press Restart or Rewind.");
       return;
     }
 
-    // Schedule next
     timer = setTimeout(() => {
       if (!playing) return;
       stepOnce();
@@ -382,8 +355,7 @@
   }
 
   function play() {
-    if (!tokens.length) return;
-    if (playing) return;
+    if (!tokens.length || playing) return;
     playing = true;
     setStatus("Playing...");
     stopTimer();
@@ -420,9 +392,18 @@
     setStatus("Forwarded.");
   }
 
-  // --- UI wiring ---
-  els.periodPause.addEventListener("input", () => els.periodVal.textContent = els.periodPause.value);
-  els.commaPause.addEventListener("input", () => els.commaVal.textContent = els.commaPause.value);
+  window.addEventListener("resize", () => {
+    requestAnimationFrame(() => {
+      if (els.word && els.word.textContent.length > 0) alignPivotToWordboxCenter();
+    });
+  });
+
+  els.periodPause.addEventListener("input", () => {
+    els.periodVal.textContent = els.periodPause.value;
+  });
+  els.commaPause.addEventListener("input", () => {
+    els.commaVal.textContent = els.commaPause.value;
+  });
 
   els.playBtn.addEventListener("click", play);
   els.pauseBtn.addEventListener("click", pause);
@@ -447,16 +428,18 @@
     try {
       const res = await fetch("/upload", { method: "POST", body: form });
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Upload failed");
-      }
 
-      tokens = data.tokens || [];
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+
+      tokens = Array.isArray(data.tokens) ? data.tokens : [];
+      tokens = tokens.map(t => String(t).trim()).filter(t => t.length > 0);
+
       index = 0;
 
       els.loadPill.textContent = `Loaded: ${tokens.length} tokens`;
       setStatus(tokens.length ? "Loaded. Press Play." : "Loaded, but no text tokens found (possibly scanned PDF).");
       setControlsEnabled(tokens.length > 0);
+
       renderToken(tokens[0] || "");
       updateCounter();
     } catch (e) {
@@ -470,10 +453,10 @@
     }
   });
 
-  // Init displayed slider values
   els.periodVal.textContent = els.periodPause.value;
   els.commaVal.textContent = els.commaPause.value;
   updateCounter();
+})();
 </script>
 </body>
 </html>
